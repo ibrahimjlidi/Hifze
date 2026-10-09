@@ -1,7 +1,7 @@
 export const SENSITIVITY_LEVELS = {
-  strict: { label: 'Strict', maxDistance: 0 },
-  normal: { label: 'Normal', maxDistance: 1 },
-  forgiving: { label: 'Forgiving', maxDistance: 2 },
+  strict: { label: 'دقيق', maxDistance: 0 },
+  normal: { label: 'متوازن', maxDistance: 1 },
+  forgiving: { label: 'متسامح', maxDistance: 2 },
 }
 
 export const COMMON_RECOGNITION_VARIANTS = {

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BASM, LV, PER, Q } from './quranData'
 import { SENSITIVITY_LEVELS, classifySpeech, normalizeArabic, wordMatches } from './lib/arabic'
-import { getDueReviews, getMistakes, getReviewHistory, getReviewQueue, getReviewSummary, markReviewComplete, saveMistake } from './lib/db'
+import { getDueReviews, getMistakes, getReviewHistory, getReviewSummary, markReviewComplete, saveMistake } from './lib/db'
 import './App.css'
 
 const ar = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d])
+const surahName = (index) => Q[index]?.a || `السورة ${ar(index + 1)}`
 
 const rank = (s, v, i) => (((s + 1) * 73856093 ^ (v + 1) * 19349663 ^ (i + 1) * 83492791) >>> 0) % 1000 / 1000
 
@@ -95,11 +96,13 @@ function App() {
   const [rec, setRec] = useState(defaultRecState)
   const [listening, setListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [audioError, setAudioError] = useState('')
   const [sensitivity, setSensitivity] = useState('normal')
   const [mistakes, setMistakes] = useState([])
   const [reviewQueue, setReviewQueue] = useState([])
   const [reviewHistory, setReviewHistory] = useState([])
   const recognitionRef = useRef(null)
+  const audioRef = useRef(null)
   const todayKey = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
@@ -149,7 +152,7 @@ function App() {
     let isMounted = true
     const loadReviewQueue = async () => {
       try {
-        const rows = await getReviewQueue()
+        const rows = await getDueReviews()
         if (isMounted) setReviewQueue(rows)
       } catch {
         if (isMounted) setReviewQueue([])
@@ -174,8 +177,10 @@ function App() {
 
   useEffect(() => {
     return () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel()
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.removeAttribute('src')
+        audioRef.current.load()
       }
     }
   }, [])
@@ -207,12 +212,6 @@ function App() {
 
     return () => window.clearInterval(interval)
   }, [focusActive])
-
-  useEffect(() => {
-    if (!focusActive) {
-      setFocusSecondsLeft(focusMinutes * 60)
-    }
-  }, [focusActive, focusMinutes])
 
   const currentSurah = Q[surahIndex]
   const currentCompleted = done[surahIndex] || []
@@ -246,7 +245,7 @@ function App() {
 
   const revisionQueue = useMemo(() => {
     return Q.map((surah, index) => ({
-      name: surah.n,
+      name: surah.a,
       index,
       verses: surah.v.length,
       memorized: (done[index] || []).length,
@@ -289,7 +288,7 @@ function App() {
       const count = Number(studyLog[key] || 0)
       return {
         key,
-        short: date.toLocaleDateString(undefined, { weekday: 'short' }),
+        short: ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'][date.getDay()],
         count,
         height: Math.min(100, count ? 25 + Math.min(75, count * 10) : 8),
       }
@@ -322,27 +321,27 @@ function App() {
   }, [studyLog])
 
   const reviewSummary = useMemo(() => getReviewSummary(mistakes), [mistakes])
-  const dueReviewSummary = useMemo(() => getReviewSummary(reviewQueue), [reviewQueue])
-  const strongestReviewTarget = dueReviewSummary[0] || reviewSummary[0]
-  const focusSurahName = strongestReviewTarget ? Q[strongestReviewTarget.surahIndex]?.n || `Surah ${strongestReviewTarget.surahIndex + 1}` : 'Weakest surah'
-  const reviewPriorityLabel = strongestReviewTarget ? `${focusSurahName} · ${strongestReviewTarget.count} weak points` : 'No weak points tracked yet'
   const dueReviews = useMemo(() => [...(reviewQueue || [])].sort((a, b) => (a.dueAt || 0) - (b.dueAt || 0)), [reviewQueue])
+  const dueReviewSummary = useMemo(() => getReviewSummary(dueReviews), [dueReviews])
+  const strongestReviewTarget = dueReviewSummary[0] || reviewSummary[0]
+  const focusSurahName = strongestReviewTarget ? surahName(strongestReviewTarget.surahIndex) : 'أضعف سورة'
+  const reviewPriorityLabel = strongestReviewTarget ? `${focusSurahName} · ${ar(strongestReviewTarget.count)} مواضع تحتاج إلى مراجعة` : 'لم تُسجّل مواضع تحتاج إلى مراجعة بعد'
   const reviewPlan = useMemo(() => [
-    { label: 'Open', value: focusSurahName, meta: 'Weakest focus' },
-    { label: 'Due', value: String(dueReviews.length), meta: 'Items ready' },
-    { label: 'Done', value: String(reviewHistory.length), meta: 'Completed today' },
+    { label: 'السورة', value: focusSurahName, meta: 'موضع التركيز الأضعف' },
+    { label: 'مستحقة', value: ar(dueReviews.length), meta: 'جاهزة للمراجعة' },
+    { label: 'مكتملة', value: ar(reviewHistory.length), meta: 'مراجعات أُنجزت اليوم' },
   ], [dueReviews.length, focusSurahName, reviewHistory.length])
   const coachMessage = useMemo(() => {
     if (dueReviews.length > 0) {
-      return `Review ${Q[dueReviews[0].surahIndex]?.n || 'the next surah'} before moving on — it is due now.`
+      return `راجع سورة ${surahName(dueReviews[0].surahIndex)} قبل المتابعة؛ موعد مراجعتها الآن.`
     }
     if (todayCount < dailyGoal) {
-      return `You are ${Math.max(0, dailyGoal - todayCount)} words away from today’s goal. Keep the next pass short and focused.`
+      return `بقي ${ar(Math.max(0, dailyGoal - todayCount))} كلمة لتحقيق هدف اليوم. اجعل المراجعة التالية قصيرة ومركّزة.`
     }
     if (strongestReviewTarget) {
-      return `Your biggest weak spot is ${Q[strongestReviewTarget.surahIndex]?.n || 'this surah'}. Give it a quick recitation pass.`
+      return `أكثر مواضع الضعف في سورة ${surahName(strongestReviewTarget.surahIndex)}. خصّص لها تلاوة قصيرة.`
     }
-    return 'Strong momentum. Keep the pace steady and review one short passage before you finish.'
+    return 'أحسنت، واصل بهذا الإيقاع وراجع مقطعًا قصيرًا قبل أن تنتهي.'
   }, [dailyGoal, dueReviews, strongestReviewTarget, todayCount])
   const nextDueReview = dueReviews[0]
   const reviewFocusIndex = strongestReviewTarget?.surahIndex ?? surahIndex
@@ -368,27 +367,35 @@ function App() {
     }).slice(0, 5)
   }, [done, mistakes, reviewFocusIndex])
   const formatReviewDueLabel = (dueAt) => {
-    if (!dueAt) return 'Scheduled soon'
+    if (!dueAt) return 'ستُجدول قريبًا'
     const diffMs = dueAt - Date.now()
     const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-    if (days <= 0) return 'Due now'
-    if (days === 1) return 'Due tomorrow'
-    return `Due in ${days} days`
+    if (days <= 0) return 'مستحقة الآن'
+    if (days === 1) return 'مستحقة غدًا'
+    return `مستحقة بعد ${ar(days)} أيام`
   }
   const formatDuration = (seconds) => {
     const safeSeconds = Math.max(0, Number(seconds) || 0)
     const minutes = Math.floor(safeSeconds / 60)
     const remainder = safeSeconds % 60
-    return `${minutes}:${String(remainder).padStart(2, '0')}`
+    return ar(`${minutes}:${String(remainder).padStart(2, '0')}`)
   }
   const focusProgress = focusMinutes > 0 ? Math.min(100, Math.round(((focusMinutes * 60 - focusSecondsLeft) / (focusMinutes * 60)) * 100)) : 0
+  const toggleFocusSession = () => {
+    if (focusActive) {
+      setFocusActive(false)
+      return
+    }
+    if (focusSecondsLeft <= 0) setFocusSecondsLeft(focusMinutes * 60)
+    setFocusActive(true)
+  }
   const coachPlan = useMemo(() => {
     const steps = []
 
     if (nextDueReview) {
       steps.push({
-        title: 'Start with due review',
-        detail: `${Q[nextDueReview.surahIndex]?.n || 'Next surah'} · ${formatReviewDueLabel(nextDueReview.dueAt)}. Recite once from memory, then check.`,
+        title: 'ابدأ بالمراجعة المستحقة',
+        detail: `سورة ${surahName(nextDueReview.surahIndex)} · ${formatReviewDueLabel(nextDueReview.dueAt)}. تَلُها من حفظك ثم تحقّق منها.`,
         tone: 'primary',
         action: 'due',
       })
@@ -396,8 +403,8 @@ function App() {
 
     if (todayCount < dailyGoal) {
       steps.push({
-        title: 'Reach today’s goal',
-        detail: `${Math.max(0, dailyGoal - todayCount)} words left. Learn a short chunk, then join it to the previous one.`,
+        title: 'أكمل هدف اليوم',
+        detail: `بقي ${ar(Math.max(0, dailyGoal - todayCount))} كلمة. احفظ مقطعًا قصيرًا ثم صِله بما قبله.`,
         tone: 'secondary',
         action: 'goal',
       })
@@ -406,8 +413,8 @@ function App() {
     if (strongestReviewTarget) {
       const targetSurah = Q[strongestReviewTarget.surahIndex]
       steps.push({
-        title: 'Target weak spot',
-        detail: `${targetSurah?.n || 'This surah'} · ${strongestReviewTarget.count} weak points. Slow down at the transitions.`,
+        title: 'ركّز على موضع الضعف',
+        detail: `سورة ${targetSurah?.a || 'هذه السورة'} · ${ar(strongestReviewTarget.count)} مواضع تحتاج إلى مراجعة. تمهّل عند الانتقالات.`,
         tone: 'warning',
         action: 'weak',
       })
@@ -415,8 +422,8 @@ function App() {
 
     if (reviewFocusDetails[0]) {
       steps.push({
-        title: 'Focus verse',
-        detail: `Verse ${reviewFocusDetails[0].verseIndex + 1} is the most repeated weak point. Recall its opening, then recite the full verse.`,
+        title: 'آية للتركيز',
+        detail: `الآية ${ar(reviewFocusDetails[0].verseIndex + 1)} هي أكثر مواضع الضعف تكرارًا. استحضر بدايتها ثم تَلُها كاملة.`,
         tone: 'neutral',
         action: 'verse',
       })
@@ -454,19 +461,32 @@ function App() {
 
     return [...Q.entries()].map(([index, surah]) => ({
       index,
-      name: surah.n,
+      name: surah.a,
       count: map.get(index) || 0,
     })).sort((a, b) => b.count - a.count)
   }, [mistakes])
 
+  const stopAudioPlayback = () => {
+    const audio = audioRef.current
+    if (audio) {
+      audio.pause()
+      audio.onended = null
+      audio.onerror = null
+      audio.removeAttribute('src')
+      audio.load()
+    }
+    setIsSpeaking(false)
+  }
+
   const jumpToWeakestSurah = (targetIndex = null) => {
+    stopAudioPlayback()
     const weakest = [...Q.entries()].sort((a, b) => {
       const valueA = (done[a[0]] || []).length / a[1].v.length
       const valueB = (done[b[0]] || []).length / b[1].v.length
       return valueA - valueB
     })[0]
 
-    const nextTarget = targetIndex !== null ? targetIndex : weakest?.[0]
+    const nextTarget = targetIndex !== null ? targetIndex : (strongestReviewTarget?.surahIndex ?? weakest?.[0])
     if (nextTarget === undefined || nextTarget === null) return
     setSurahIndex(nextTarget)
     setPage(0)
@@ -518,8 +538,8 @@ function App() {
   const buildRecitation = () => {
     const wordsList = []
     for (let verseIndex = verseStart; verseIndex < verseEnd; verseIndex += 1) {
-      words(currentSurah.v[verseIndex]).forEach((word) => {
-        wordsList.push({ v: verseIndex, w: word, n: norm(word) })
+      words(currentSurah.v[verseIndex]).forEach((word, wordIndex) => {
+        wordsList.push({ v: verseIndex, i: wordIndex, w: word, n: norm(word) })
       })
     }
     return {
@@ -598,7 +618,7 @@ function App() {
           }
         })
         setDone((prev) => ({ ...prev, [surahIndex]: nextDone }))
-        next.msg = 'Page complete.'
+        next.msg = 'اكتمل هذا المقطع.'
         setListening(false)
         if (recognitionRef.current) {
           recognitionRef.current.stop()
@@ -644,12 +664,12 @@ function App() {
   const startRecitation = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      setRec((previous) => ({ ...previous, msg: "Speech recognition isn't supported in this browser. Try Chrome or Safari." }))
+      setRec((previous) => ({ ...previous, msg: 'التعرّف على الكلام غير مدعوم في هذا المتصفح. جرّب متصفحًا آخر يدعم هذه الميزة.' }))
       return
     }
 
     const nextRec = buildRecitation()
-    nextRec.msg = 'Listening…'
+    nextRec.msg = 'جارٍ الاستماع…'
     setRec(nextRec)
 
     const recognition = new SpeechRecognition()
@@ -668,7 +688,7 @@ function App() {
         setListening(false)
         setRec((previous) => ({
           ...previous,
-          msg: 'Microphone is blocked. Allow it in your browser, or open this page in its own tab.',
+          msg: 'الميكروفون محظور. اسمح باستخدامه في المتصفح، أو افتح الصفحة في علامة تبويب مستقلة.',
         }))
       }
     }
@@ -773,32 +793,53 @@ function App() {
 
   const handleAudioToggle = () => {
     if (typeof window === 'undefined') return
-    const synth = window.speechSynthesis
-    if (!synth) return
+    const player = audioRef.current
 
-    if (isSpeaking || synth.speaking || synth.pending) {
-      synth.cancel()
-      setIsSpeaking(false)
+    if (isSpeaking || (player && !player.paused)) {
+      stopAudioPlayback()
       return
     }
 
-    const text = currentSurah.v.slice(verseStart, verseEnd).join(' ')
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'ar-SA'
-    utterance.rate = 0.85
-    utterance.onstart = () => setIsSpeaking(true)
-    utterance.onend = () => setIsSpeaking(false)
-    utterance.onerror = () => setIsSpeaking(false)
-    synth.cancel()
-    synth.speak(utterance)
+    const audio = player || new Audio()
+    audioRef.current = audio
+    const surahNumber = String(surahIndex + 1).padStart(3, '0')
+    let verseOffset = 0
+    setAudioError('')
+
+    const playNextVerse = () => {
+      if (verseStart + verseOffset >= verseEnd) {
+        setIsSpeaking(false)
+        return
+      }
+
+      const verseNumber = String(verseStart + verseOffset + 1).padStart(3, '0')
+      audio.src = `https://everyayah.com/data/Alafasy_128kbps/${surahNumber}${verseNumber}.mp3`
+      audio.onended = () => {
+        verseOffset += 1
+        playNextVerse()
+      }
+      audio.onerror = () => {
+        setIsSpeaking(false)
+        setAudioError('تعذّر تحميل التلاوة. تحقّق من اتصال الإنترنت وحاول مجددًا.')
+      }
+      audio.play().then(() => {
+        if (!audio.paused) setIsSpeaking(true)
+      }).catch(() => {
+        setIsSpeaking(false)
+        setAudioError('تعذّر تشغيل التلاوة. تحقّق من اتصال الإنترنت وحاول مجددًا.')
+      })
+    }
+
+    playNextVerse()
   }
 
   const pageMessages = useMemo(() => {
     const completion = Math.round((currentCompleted.length / currentSurah.v.length) * 100)
-    return `${currentCompleted.length} / ${currentSurah.v.length} memorized · ${completion}%`
+    return `${ar(currentCompleted.length)} / ${ar(currentSurah.v.length)} محفوظة · ${ar(completion)}٪`
   }, [currentCompleted.length, currentSurah.v.length])
 
   const handleSurahChange = (event) => {
+    stopAudioPlayback()
     const nextSurah = Number(event.target.value)
     setSurahIndex(nextSurah)
     setPage(0)
@@ -809,6 +850,7 @@ function App() {
   }
 
   const handleNextPage = () => {
+    stopAudioPlayback()
     if ((page + 1) * PER < currentSurah.v.length) {
       setPage((prev) => prev + 1)
     } else if (surahIndex < Q.length - 1) {
@@ -821,6 +863,7 @@ function App() {
   }
 
   const handlePreviousPage = () => {
+    stopAudioPlayback()
     if (page > 0) {
       setPage((prev) => prev - 1)
     } else if (surahIndex > 0) {
@@ -839,7 +882,7 @@ function App() {
           <div className="sh">
             سورة {currentSurah.a}
             <small>
-              {currentSurah.n} · {currentSurah.v.length} verses
+              {currentSurah.a} · {ar(currentSurah.v.length)} آية
             </small>
           </div>
         )}
@@ -867,7 +910,7 @@ function App() {
                       }}
                       tabIndex={shouldHide ? 0 : -1}
                       role={shouldHide ? 'button' : undefined}
-                      aria-label={shouldHide ? 'Hidden word, tap to reveal' : undefined}
+                      aria-label={shouldHide ? 'كلمة مخفية، اضغط لإظهارها' : undefined}
                     >
                       {word}{' '}
                     </span>
@@ -884,7 +927,7 @@ function App() {
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Verse ${verseIndex + 1}${isDone ? ', memorized' : ', mark memorized'}`}
+                  aria-label={`الآية ${ar(verseIndex + 1)}${isDone ? '، محفوظة' : '، تحديدها كمحفوظة'}`}
                 >
                   {ar(verseIndex + 1)}
                 </span>{' '}
@@ -900,15 +943,15 @@ function App() {
     <div className="review-page">
       <div className="review-header">
         <div>
-          <div className="review-title">Review dashboard</div>
-          <h3>Focused revision</h3>
+          <div className="review-title">لوحة المراجعة</div>
+          <h3>مراجعة مركّزة</h3>
         </div>
-        <button type="button" className="primary" onClick={() => jumpToWeakestSurah()}>Start weakest</button>
+        <button type="button" className="primary" onClick={() => jumpToWeakestSurah()}>ابدأ بأضعف سورة</button>
       </div>
 
       <div className="focus-summary">
         <div>
-          <span className="focus-label">Priority</span>
+          <span className="focus-label">الأولوية</span>
           <strong>{focusSurahName}</strong>
         </div>
         <div className="focus-meta">{reviewPriorityLabel}</div>
@@ -925,78 +968,78 @@ function App() {
       </div>
 
       <div className="review-panel">
-        <div className="review-title">Due now</div>
+        <div className="review-title">مراجعات مستحقة الآن</div>
         {dueReviews.length ? (
           dueReviews.slice(0, 6).map((item) => (
             <div key={item.id} className="review-entry review-entry-large">
               <div className="review-entry-copy">
-                <strong>{Q[item.surahIndex]?.n || `Surah ${item.surahIndex + 1}`}</strong>
+                <strong>{surahName(item.surahIndex)}</strong>
                 <small>{formatReviewDueLabel(item.dueAt)}</small>
               </div>
               <div className="review-entry-actions">
-                <button type="button" className="soft-button" onClick={() => jumpToWeakestSurah(item.surahIndex)}>Open</button>
-                <button type="button" className="soft-button" onClick={() => void handleReviewComplete(item.id)}>Done</button>
+                <button type="button" className="soft-button" onClick={() => jumpToWeakestSurah(item.surahIndex)}>فتح</button>
+                <button type="button" className="soft-button" onClick={() => void handleReviewComplete(item.id)}>تمت</button>
               </div>
             </div>
           ))
         ) : (
-          <div className="review-empty">No review items are due yet.</div>
+          <div className="review-empty">لا توجد مراجعات مستحقة الآن.</div>
         )}
       </div>
 
       <div className="drilldown-panel">
-        <div className="review-title">Focus drill-down</div>
+        <div className="review-title">تفاصيل مواضع التركيز</div>
         <div className="drilldown-header">
-          <strong>{Q[reviewFocusIndex]?.n || 'Focus surah'}</strong>
-          <span>{(done[reviewFocusIndex] || []).length}/{Q[reviewFocusIndex]?.v.length || 0} verses</span>
+          <strong>{surahName(reviewFocusIndex)}</strong>
+          <span>{ar((done[reviewFocusIndex] || []).length)}/{ar(Q[reviewFocusIndex]?.v.length || 0)} آية</span>
         </div>
         {reviewFocusDetails.length ? (
           <div className="drilldown-list">
             {reviewFocusDetails.map((item) => (
               <div key={item.verseIndex} className="drilldown-item">
                 <div>
-                  <small>Verse {item.verseIndex + 1}</small>
-                  <div>{item.preview || 'Weak verse'}</div>
+                  <small>الآية {ar(item.verseIndex + 1)}</small>
+                  <div>{item.preview || 'آية تحتاج إلى مراجعة'}</div>
                 </div>
-                <span className="drilldown-count">{item.count}</span>
+                <span className="drilldown-count">{ar(item.count)}</span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="review-empty">No weak verse data yet for this surah.</div>
+          <div className="review-empty">لا توجد بيانات عن مواضع الضعف في هذه السورة بعد.</div>
         )}
       </div>
 
       <div className="review-board">
-        <div className="review-title">Weakest surahs</div>
+        <div className="review-title">السور الأضعف</div>
         <div className="review-board-grid">
           {surahReviewStats.slice(0, 8).map((item) => (
             <button key={item.index} type="button" className="review-board-card" onClick={() => jumpToWeakestSurah(item.index)}>
               <span>{item.name}</span>
-              <strong>{item.count}</strong>
+              <strong>{ar(item.count)}</strong>
             </button>
           ))}
         </div>
       </div>
 
       <div className="review-history">
-        <div className="review-title">Completed</div>
+        <div className="review-title">المراجعات المكتملة</div>
         {reviewHistory.length ? (
           reviewHistory.slice(0, 5).map((item) => (
             <div key={item.id} className="review-history-item">
-              <span>{Q[item.surahIndex]?.n || `Surah ${item.surahIndex + 1}`}</span>
-              <small>{new Date(item.completedAt).toLocaleDateString()}</small>
+              <span>{surahName(item.surahIndex)}</span>
+              <small>{new Date(item.completedAt).toLocaleDateString('ar-SA-u-ca-gregory')}</small>
             </div>
           ))
         ) : (
-          <div className="review-empty">No completed review entries yet.</div>
+          <div className="review-empty">لا توجد مراجعات مكتملة بعد.</div>
         )}
       </div>
     </div>
   )
 
   const renderReciteMode = () => {
-    const pageText = currentSurah.n
+    const pageText = currentSurah.a
     const firstVerse = rec.f[0]?.v ?? verseStart
     const lastVerse = rec.f[rec.f.length - 1]?.v ?? verseEnd - 1
     const currentIssue = rec.currentIssue
@@ -1005,15 +1048,15 @@ function App() {
       <>
         {currentIssue && (
           <div className={`mistake-banner ${currentIssue.type || 'wrong'}`}>
-            {currentIssue.type === 'wrong' && `You said: ${currentIssue.said || '…'} / Correct: ${currentIssue.expected || '…'}`}
-            {currentIssue.type === 'skipped' && `Skipped word: ${currentIssue.expected || '…'}`}
-            {currentIssue.type === 'extra' && `Extra word: ${currentIssue.said || '…'}`}
-            {currentIssue.type === 'peek' && `Peeked: ${currentIssue.expected || '…'}`}
+            {currentIssue.type === 'wrong' && `قلتَ: ${currentIssue.said || '…'} / الصواب: ${currentIssue.expected || '…'}`}
+            {currentIssue.type === 'skipped' && `الكلمة المتروكة: ${currentIssue.expected || '…'}`}
+            {currentIssue.type === 'extra' && `كلمة زائدة: ${currentIssue.said || '…'}`}
+            {currentIssue.type === 'peek' && `أظهرتَ: ${currentIssue.expected || '…'}`}
           </div>
         )}
         {(!rec.key || !rec.f.length) && (
           <div className="ph">
-            {pageText}, verses {firstVerse + 1} to {lastVerse + 1}. The page is hidden. Tap Start reciting and recite from memory.
+            {pageText}، الآيات {ar(firstVerse + 1)} إلى {ar(lastVerse + 1)}. الصفحة مخفية. اضغط «ابدأ التلاوة» ثم اقرأ من حفظك.
           </div>
         )}
         {rec.f.length > 0 && (
@@ -1031,10 +1074,10 @@ function App() {
 
                       return (
                         <span
-                          key={`${entry.v}-${entry.w}`}
+                          key={`${entry.v}-${entry.i}`}
                           className={isIssueWord ? 'w issue-word' : 'w'}
                         >
-                          {rec.pos > rec.f.findIndex((item) => item.v === entry.v && item.w === entry.w) ? `${entry.w} ` : '… '}
+                          {rec.pos > rec.f.findIndex((item) => item.v === entry.v && item.i === entry.i) ? `${entry.w} ` : '… '}
                         </span>
                       )
                     }
@@ -1045,7 +1088,7 @@ function App() {
             })}
             {rec.hint && <span className="hint">{rec.hint}</span>}
             {currentIssue?.type === 'extra' && currentIssue.said && (
-              <span className="extra-tag">Extra: {currentIssue.said}</span>
+              <span className="extra-tag">زائد: {currentIssue.said}</span>
             )}
           </div>
         )}
@@ -1056,31 +1099,32 @@ function App() {
   return (
     <main className="app-shell">
       <div className="bar">
-        <select value={surahIndex} onChange={handleSurahChange} aria-label="Surah">
+        <select value={surahIndex} onChange={handleSurahChange} aria-label="السورة">
           {Q.map((surah, index) => (
             <option key={surah.n} value={index}>
-              {index + 1}. {surah.n} · {surah.a}
+              {ar(index + 1)}. {surah.a}
             </option>
           ))}
         </select>
-        <button type="button" onClick={handleAudioToggle}>
-          {isSpeaking ? 'Stop audio' : 'Play audio'}
+        <button type="button" onClick={handleAudioToggle} aria-label={isSpeaking ? 'إيقاف تلاوة القرآن' : 'تشغيل تلاوة القرآن بصوت مشاري العفاسي'}>
+          {isSpeaking ? 'إيقاف التلاوة' : 'تشغيل التلاوة'}
         </button>
+        {audioError && <span className="audio-status" role="status" aria-live="polite">{audioError}</span>}
         <button type="button" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
-          Theme
+          المظهر
         </button>
       </div>
 
       <div className="bar">
-        <div className="seg" role="group" aria-label="Mode">
+        <div className="seg" role="group" aria-label="وضع العرض">
           <button type="button" className={mode === 'read' ? 'active' : ''} onClick={() => setMode('read')}>
-            Read
+            قراءة
           </button>
           <button type="button" className={mode === 'recite' ? 'active' : ''} onClick={() => setMode('recite')}>
-            Recite
+            تسميع
           </button>
           <button type="button" className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}>
-            Review
+            مراجعة
           </button>
         </div>
       </div>
@@ -1088,9 +1132,9 @@ function App() {
       {mode !== 'review' && (
         <div className="dashboard">
           <div className="dashboard-head">
-            <div className="dashboard-title">Progress</div>
+            <div className="dashboard-title">التقدّم</div>
             <label className="goal-label">
-              Daily goal:
+              الهدف اليومي:
               <input
                 type="number"
                 min="5"
@@ -1102,30 +1146,30 @@ function App() {
           </div>
           <div className="dashboard-grid">
             <div className="dashboard-card">
-              <span className="dashboard-label">Today</span>
-              <div className="dashboard-value">{todayCount}</div>
-              <div className="dashboard-sub">{Math.min(100, Math.round((todayCount / dailyGoal) * 100))}% of goal</div>
+              <span className="dashboard-label">اليوم</span>
+              <div className="dashboard-value">{ar(todayCount)}</div>
+              <div className="dashboard-sub">{ar(Math.min(100, Math.round((todayCount / dailyGoal) * 100)))}٪ من الهدف</div>
             </div>
             <div className="dashboard-card">
-              <span className="dashboard-label">Streak</span>
-              <div className="dashboard-value">{studyStreak}d</div>
-              <div className="dashboard-sub">Consistency</div>
+              <span className="dashboard-label">التتابع</span>
+              <div className="dashboard-value">{ar(studyStreak)} يوم</div>
+              <div className="dashboard-sub">الاستمرارية</div>
             </div>
             <div className="dashboard-card">
-              <span className="dashboard-label">This Surah</span>
-              <div className="dashboard-value">{surahProgress.memorized}</div>
-              <div className="dashboard-sub">{surahProgress.percent}%</div>
+              <span className="dashboard-label">هذه السورة</span>
+              <div className="dashboard-value">{ar(surahProgress.memorized)}</div>
+              <div className="dashboard-sub">{ar(surahProgress.percent)}٪</div>
             </div>
             <div className="dashboard-card">
-              <span className="dashboard-label">Session</span>
-              <div className="dashboard-value">{sessionAccuracy}%</div>
-              <div className="dashboard-sub">{Math.max(0, rec.f.length - (rec.mistakes?.length || 0))} words this pass</div>
+              <span className="dashboard-label">الجلسة</span>
+              <div className="dashboard-value">{ar(sessionAccuracy)}٪</div>
+              <div className="dashboard-sub">{ar(Math.max(0, rec.f.length - (rec.mistakes?.length || 0)))} كلمة في هذه المحاولة</div>
             </div>
           </div>
 
-          <div className="streak-strip" aria-label="Weekly progress">
+          <div className="streak-strip" aria-label="التقدّم الأسبوعي">
             {weeklyProgress.map((item) => (
-              <div key={item.key} className="streak-bar-wrap" title={`${item.short}: ${item.count} words`}>
+              <div key={item.key} className="streak-bar-wrap" title={`${item.short}: ${ar(item.count)} كلمة`}>
                 <span className="streak-bar" style={{ height: `${item.height}%` }} />
                 <small>{item.short.slice(0, 1)}</small>
               </div>
@@ -1134,28 +1178,28 @@ function App() {
 
           <div className="focus-box">
             <div>
-              <span className="focus-label">Daily focus</span>
-              <strong>{todayCount}/{dailyGoal} words</strong>
+              <span className="focus-label">الهدف اليومي</span>
+              <strong>{ar(todayCount)}/{ar(dailyGoal)} كلمة</strong>
             </div>
-            <div className="goal-meter" aria-label="Daily goal progress">
+            <div className="goal-meter" aria-label="إنجاز الهدف اليومي">
               <span style={{ width: `${goalProgress}%` }} />
             </div>
           </div>
 
           <div className="pulse-box">
-            <div className="pulse-title">Study pulse</div>
+            <div className="pulse-title">ملخّص الدراسة</div>
             <div className="pulse-grid">
               <div className="pulse-card">
-                <span>This week</span>
-                <strong>{weeklyWordTotal} words</strong>
+                <span>هذا الأسبوع</span>
+                <strong>{ar(weeklyWordTotal)} كلمة</strong>
               </div>
               <div className="pulse-card">
-                <span>Best streak</span>
-                <strong>{bestStreak} days</strong>
+                <span>أطول تتابع</span>
+                <strong>{ar(bestStreak)} يوم</strong>
               </div>
               <div className="pulse-card">
-                <span>Top review</span>
-                <strong>{surahReviewStats[0]?.name || 'N/A'}</strong>
+                <span>الأكثر مراجعة</span>
+                <strong>{surahReviewStats[0]?.name || 'لا يوجد'}</strong>
               </div>
             </div>
           </div>
@@ -1163,16 +1207,16 @@ function App() {
           <div className="session-box">
             <div className="session-head">
               <div>
-                <span className="focus-label">Focus session</span>
+                <span className="focus-label">جلسة تركيز</span>
                 <strong>{formatDuration(focusSecondsLeft)}</strong>
               </div>
-              <button type="button" className="secondary-button" onClick={() => setFocusActive((previous) => !previous)}>
-                {focusActive ? 'Pause' : 'Start'}
+              <button type="button" className="secondary-button" onClick={toggleFocusSession}>
+                {focusActive ? 'إيقاف مؤقت' : 'ابدأ'}
               </button>
             </div>
             <div className="session-controls">
               <label className="goal-label">
-                Minutes:
+                الدقائق:
                 <input
                   type="number"
                   min="5"
@@ -1186,13 +1230,13 @@ function App() {
                 />
               </label>
             </div>
-            <div className="goal-meter" aria-label="Focus session progress">
+            <div className="goal-meter" aria-label="تقدّم جلسة التركيز">
               <span style={{ width: `${focusProgress}%` }} />
             </div>
           </div>
 
           <div className="coach-box">
-            <div className="coach-title">Coach</div>
+            <div className="coach-title">الموجّه</div>
             <div className="coach-message">{coachMessage}</div>
           </div>
 
@@ -1203,8 +1247,8 @@ function App() {
                   <span>{step.title}</span>
                   <strong>{step.detail}</strong>
                 </div>
-                <button type="button" className="coach-action" onClick={() => handleCoachAction(step.action)}>
-                  Practice
+                  <button type="button" className="coach-action" onClick={() => handleCoachAction(step.action)}>
+                  تدرّب
                 </button>
               </div>
             ))}
@@ -1216,62 +1260,62 @@ function App() {
                 <div>
                   <strong>{item.name}</strong>
                   <div>
-                    {item.memorized}/{item.verses} verses
+                    {ar(item.memorized)}/{ar(item.verses)} آية
                   </div>
                 </div>
-                <div>{item.percent}%</div>
+                <div>{ar(item.percent)}٪</div>
               </div>
             ))}
           </div>
           <div className="review-panel">
-            <div className="review-title">Mistakes to review</div>
+            <div className="review-title">مواضع تحتاج إلى مراجعة</div>
             {(dueReviewSummary.length || reviewSummary.length) ? (
               (dueReviewSummary.length ? dueReviewSummary : reviewSummary).slice(0, 3).map((item) => (
                 <div key={item.surahIndex} className={`review-item ${strongestReviewTarget?.surahIndex === item.surahIndex ? 'highlight' : ''}`}>
-                  <span>{Q[item.surahIndex]?.n || `Surah ${item.surahIndex + 1}`}</span>
-                  <strong>{item.count}</strong>
+                  <span>{surahName(item.surahIndex)}</span>
+                  <strong>{ar(item.count)}</strong>
                 </div>
               ))
             ) : (
-              <div className="review-empty">No mistakes recorded yet.</div>
+              <div className="review-empty">لم تُسجّل أخطاء بعد.</div>
             )}
-            {reviewQueue.length > 0 && <div className="review-subtle">{reviewQueue.length} review items due now</div>}
+            {dueReviews.length > 0 && <div className="review-subtle">{ar(dueReviews.length)} مراجعات مستحقة الآن</div>}
           </div>
 
           <div className="review-queue">
-            <div className="review-title">Today’s review</div>
+            <div className="review-title">مراجعة اليوم</div>
             {dueReviews.length ? (
               dueReviews.slice(0, 4).map((item) => (
                 <div key={item.id} className="review-entry">
                   <div className="review-entry-copy">
-                    <strong>{Q[item.surahIndex]?.n || `Surah ${item.surahIndex + 1}`}</strong>
+                    <strong>{surahName(item.surahIndex)}</strong>
                     <small>{formatReviewDueLabel(item.dueAt)}</small>
                   </div>
                   <div className="review-entry-actions">
-                    <button type="button" className="soft-button" onClick={() => jumpToWeakestSurah(item.surahIndex)}>Open</button>
-                    <button type="button" className="soft-button" onClick={() => void handleReviewComplete(item.id)}>Done</button>
+                    <button type="button" className="soft-button" onClick={() => jumpToWeakestSurah(item.surahIndex)}>فتح</button>
+                    <button type="button" className="soft-button" onClick={() => void handleReviewComplete(item.id)}>تمت</button>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="review-empty">No review items are due yet. Keep going.</div>
+              <div className="review-empty">لا توجد مراجعات مستحقة الآن. واصل الحفظ.</div>
             )}
             {nextDueReview && (
-              <div className="review-next">Next up: {Q[nextDueReview.surahIndex]?.n || `Surah ${nextDueReview.surahIndex + 1}`}</div>
+              <div className="review-next">التالي: سورة {surahName(nextDueReview.surahIndex)}</div>
             )}
           </div>
 
           <div className="review-actions">
             <button type="button" className="focus-button" onClick={handleReviewQueue}>
-              {strongestReviewTarget ? `Review ${Q[strongestReviewTarget.surahIndex]?.n || 'this surah'}` : 'Revise weakest surah'}
+              {strongestReviewTarget ? `راجع سورة ${surahName(strongestReviewTarget.surahIndex)}` : 'راجع أضعف سورة'}
             </button>
-            <button type="button" className="secondary-button" onClick={jumpToWeakestSurah}>Weakest surah</button>
+            <button type="button" className="secondary-button" onClick={() => jumpToWeakestSurah()}>أضعف سورة</button>
           </div>
         </div>
       )}
 
       <div className="bar" hidden={mode === 'recite'}>
-        <div className="seg" role="group" aria-label="Hidden words">
+        <div className="seg" role="group" aria-label="إخفاء الكلمات">
           {LV.map(([label, ratio], index) => (
             <button
               key={label}
@@ -1299,16 +1343,16 @@ function App() {
         >
           {listening ? 'Stop' : 'Start reciting'}
         </button>
-        <button type="button" onClick={handleHint}>Hint</button>
-        <button type="button" onMouseDown={handlePeek} onTouchStart={handlePeek}>Hold to peek</button>
+        <button type="button" onClick={handleHint}>تلميح</button>
+        <button type="button" onMouseDown={handlePeek} onTouchStart={handlePeek}>اضغط مطولًا للإظهار</button>
         <button type="button" onClick={() => { setRec(defaultRecState()); setListening(false); if (recognitionRef.current) recognitionRef.current.stop(); }}>
-          Restart
+          إعادة البدء
         </button>
       </div>
 
       <div className="bar" hidden={mode !== 'recite'}>
         <label className="sensitivity-picker">
-          Sensitivity
+          دقة المطابقة
           <select value={sensitivity} onChange={(event) => setSensitivity(event.target.value)}>
             {Object.entries(SENSITIVITY_LEVELS).map(([key, config]) => (
               <option key={key} value={key}>
@@ -1320,12 +1364,12 @@ function App() {
       </div>
 
       <div className="info" hidden={mode !== 'recite'}>
-        <span className={listening ? 'live' : ''}>{rec.msg || (listening ? 'Listening… recite from verse 1' : `Hints used: ${rec.mist}`)}</span>
+        <span className={listening ? 'live' : ''}>{rec.msg || (listening ? 'جارٍ الاستماع… ابدأ التلاوة من الآية الأولى' : `التلميحات المستخدمة: ${ar(rec.mist)}`)}</span>
       </div>
 
       <div className="info">
         <span>{pageMessages}</span>
-        <span>{currentSurah.n}</span>
+        <span>{currentSurah.a}</span>
       </div>
 
       <div className="pb">
@@ -1339,15 +1383,15 @@ function App() {
       </div>
 
       <div className="nav">
-        <button type="button" onClick={handlePreviousPage}>Previous</button>
+        <button type="button" onClick={handlePreviousPage}>السابق</button>
         <span>
-          Page {page + 1} of {pageTotal}
+          الصفحة {ar(page + 1)} من {ar(pageTotal)}
         </span>
-        <button type="button" onClick={handleNextPage}>Next</button>
+        <button type="button" onClick={handleNextPage}>التالي</button>
       </div>
 
       <p className="note">
-        Tap the verse number to mark it memorized. Tap a hidden word to reveal it. Word-level detection only; it does not judge tajweed. Verify against a printed mushaf and recite to a teacher for tajweed.
+        اضغط رقم الآية لتحديدها كمحفوظة، واضغط الكلمة المخفية لإظهارها. يقتصر التعرّف على الكلمات ولا يقيّم أحكام التجويد. راجع مصحفًا مطبوعًا واستمع إلى معلّم متقن للتجويد.
       </p>
     </main>
   )

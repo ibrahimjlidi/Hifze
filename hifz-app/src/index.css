@@ -14,7 +14,7 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
   color: var(--ink);
   background: var(--bg);
-  font-family: Figtree, system-ui, sans-serif;
+  font-family: 'Noto Naskh Arabic', Tahoma, sans-serif;
 }
 
 :root[data-theme='dark'] {

@@ -11,6 +11,13 @@
   margin-bottom: 10px;
 }
 
+.audio-status {
+  flex: 1 0 100%;
+  color: var(--mute);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 select,
 button {
   font: inherit;
@@ -47,18 +54,18 @@ button.active {
 .seg button {
   flex: 1;
   border-radius: 0;
-  margin-left: -1px;
+  margin-inline-start: -1px;
   padding: 8px 4px;
   font-size: 13px;
 }
 
 .seg button:first-child {
-  border-radius: 10px 0 0 10px;
-  margin-left: 0;
+  border-radius: 0 10px 10px 0;
+  margin-inline-start: 0;
 }
 
 .seg button:last-child {
-  border-radius: 0 10px 10px 0;
+  border-radius: 10px 0 0 10px;
 }
 
 .info {
@@ -620,7 +627,7 @@ button.active {
   color: var(--frame);
   font-size: 12px;
   font-weight: 600;
-  text-align: right;
+  text-align: start;
 }
 
 .review-board {
