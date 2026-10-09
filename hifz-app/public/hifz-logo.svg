@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>شعار حفظ القرآن</title>
+  <rect width="64" height="64" rx="15" fill="#0f5e4c"/>
+  <path d="M12 31v-5a20 20 0 0 1 40 0v5" fill="none" stroke="#e0b45a" stroke-linecap="round" stroke-width="3"/>
+  <path d="M11 28c7-3 15-2 21 2v21c-6-4-14-5-21-2V28Z" fill="#fdf9ec"/>
+  <path d="M53 28c-7-3-15-2-21 2v21c6-4 14-5 21-2V28Z" fill="#fdf9ec"/>
+  <path d="M16 34c4-1 8 0 12 2m-12 4c4-1 8 0 12 2m8-8c4-2 8-3 12-2m-12 6c4-2 8-3 12-2" fill="none" stroke="#b8892b" stroke-linecap="round" stroke-width="1.6"/>
+  <path d="M9 53h46" fill="none" stroke="#e0b45a" stroke-linecap="round" stroke-width="2"/>
+</svg>

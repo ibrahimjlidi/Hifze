@@ -886,3 +886,182 @@ button.active {
   display: inline-block;
   margin: 0 4px;
 }
+
+.khatmah-page {
+  direction: rtl;
+}
+
+.khatmah-heading {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.khatmah-heading h2 {
+  margin: 6px 0 0;
+  font-size: 22px;
+}
+
+.khatmah-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.khatmah-stat {
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ui);
+}
+
+.khatmah-stat span {
+  display: block;
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.khatmah-stat strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.khatmah-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+
+.khatmah-progress-copy span {
+  color: var(--mute);
+}
+
+.khatmah-meter {
+  margin: 8px 0 0;
+}
+
+.khatmah-wird {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.khatmah-wird .khatmah-progress-copy {
+  margin-top: 0;
+}
+
+.khatmah-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-top: 20px;
+}
+
+.khatmah-controls label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.khatmah-controls input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--ui);
+  color: var(--ink);
+  font: inherit;
+}
+
+.khatmah-submit {
+  grid-column: 1 / -1;
+}
+
+.khatmah-start {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.khatmah-reader {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.khatmah-reader-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.khatmah-reader-head span,
+.khatmah-reader-head strong {
+  display: block;
+}
+
+.khatmah-reader-head span {
+  margin-bottom: 5px;
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.khatmah-reader-head strong {
+  font-size: 13px;
+}
+
+.khatmah-reader-head button {
+  flex: 0 0 auto;
+}
+
+.khatmah-quran-page {
+  margin-top: 14px;
+  padding: 8px 4px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.khatmah-quran-page .sh {
+  font-size: 21px;
+}
+
+.khatmah-quran-page .txt {
+  font-size: 25px;
+  line-height: 2.2;
+}
+
+.khatmah-reader-nav {
+  margin-top: 10px;
+}
+
+.khatmah-saved {
+  margin-top: 12px;
+  color: var(--mute);
+  font-size: 11px;
+  text-align: center;
+}
+
+@media (max-width: 420px) {
+  .khatmah-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .khatmah-stat:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .khatmah-reader-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

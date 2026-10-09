@@ -6,6 +6,7 @@ import './App.css'
 
 const ar = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d])
 const surahName = (index) => Q[index]?.a || `السورة ${ar(index + 1)}`
+const TOTAL_MUSHAF_PAGES = 604
 
 const rank = (s, v, i) => (((s + 1) * 73856093 ^ (v + 1) * 19349663 ^ (i + 1) * 83492791) >>> 0) % 1000 / 1000
 
@@ -61,6 +62,31 @@ const loadStudyState = () => {
   }
 }
 
+const loadKhatmahState = () => {
+  const fallback = { started: false, bookmark: { surahIndex: 0, page: 0 }, completedPages: 0, dailyWird: 5, log: {} }
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem('hifzKhatmah')
+    if (!raw) return fallback
+    const saved = JSON.parse(raw)
+    if (!saved || typeof saved !== 'object') return fallback
+    const bookmarkSurahIndex = Math.min(Q.length - 1, Math.max(0, Math.floor(Number(saved.bookmark?.surahIndex) || 0)))
+    const bookmarkPageCount = Math.ceil(Q[bookmarkSurahIndex].v.length / PER)
+    return {
+      started: saved.started === true || Number(saved.completedPages) > 0,
+      bookmark: {
+        surahIndex: bookmarkSurahIndex,
+        page: Math.min(bookmarkPageCount - 1, Math.max(0, Math.floor(Number(saved.bookmark?.page) || 0))),
+      },
+      completedPages: Math.min(TOTAL_MUSHAF_PAGES, Math.max(0, Math.floor(Number(saved.completedPages) || 0))),
+      dailyWird: Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(saved.dailyWird) || 5))),
+      log: saved.log && typeof saved.log === 'object' && !Array.isArray(saved.log) ? saved.log : {},
+    }
+  } catch {
+    return fallback
+  }
+}
+
 const defaultRecState = () => ({
   key: '',
   f: [],
@@ -78,8 +104,10 @@ const defaultRecState = () => ({
 })
 
 function App() {
-  const [surahIndex, setSurahIndex] = useState(0)
-  const [page, setPage] = useState(0)
+  const [khatmah, setKhatmah] = useState(loadKhatmahState)
+  const [surahIndex, setSurahIndex] = useState(() => khatmah.bookmark.surahIndex)
+  const [page, setPage] = useState(() => khatmah.bookmark.page)
+  const [khatmahSavedMessage, setKhatmahSavedMessage] = useState('')
   const [mode, setMode] = useState('read')
   const [hiddenLevel, setHiddenLevel] = useState(0)
   const [shownWords, setShownWords] = useState({})
@@ -90,6 +118,7 @@ function App() {
   })
   const [dailyGoal, setDailyGoal] = useState(() => loadStudyState().goal || 20)
   const [studyLog, setStudyLog] = useState(() => loadStudyState().log || {})
+  const [pagesToLog, setPagesToLog] = useState(1)
   const [focusMinutes, setFocusMinutes] = useState(15)
   const [focusSecondsLeft, setFocusSecondsLeft] = useState(15 * 60)
   const [focusActive, setFocusActive] = useState(false)
@@ -198,6 +227,12 @@ function App() {
   }, [dailyGoal, studyLog])
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('hifzKhatmah', JSON.stringify(khatmah))
+    }
+  }, [khatmah])
+
+  useEffect(() => {
     if (!focusActive) return undefined
 
     const interval = window.setInterval(() => {
@@ -254,6 +289,10 @@ function App() {
   }, [done])
 
   const todayCount = studyLog[todayKey] || 0
+  const khatmahTodayPages = Number(khatmah.log[todayKey]) || 0
+  const khatmahRemainingPages = Math.max(0, TOTAL_MUSHAF_PAGES - khatmah.completedPages)
+  const khatmahProgress = Math.round((khatmah.completedPages / TOTAL_MUSHAF_PAGES) * 100)
+  const khatmahDaysRemaining = Math.ceil(khatmahRemainingPages / khatmah.dailyWird)
   const studyStreak = useMemo(() => {
     const activeDays = Object.keys(studyLog)
       .filter((key) => Number(studyLog[key] || 0) > 0)
@@ -388,6 +427,49 @@ function App() {
     }
     if (focusSecondsLeft <= 0) setFocusSecondsLeft(focusMinutes * 60)
     setFocusActive(true)
+  }
+  const recordKhatmahPages = () => {
+    const requestedPages = Math.max(0, Math.floor(Number(pagesToLog) || 0))
+    if (!requestedPages || khatmah.completedPages >= TOTAL_MUSHAF_PAGES) return
+
+    setKhatmah((previous) => {
+      const addedPages = Math.min(requestedPages, TOTAL_MUSHAF_PAGES - previous.completedPages)
+      return {
+        ...previous,
+        completedPages: previous.completedPages + addedPages,
+        log: {
+          ...previous.log,
+          [todayKey]: (Number(previous.log[todayKey]) || 0) + addedPages,
+        },
+      }
+    })
+    setPagesToLog(1)
+  }
+  const openKhatmah = () => {
+    setSurahIndex(khatmah.bookmark.surahIndex)
+    setPage(khatmah.bookmark.page)
+    setKhatmahSavedMessage('')
+    setMode('khatmah')
+  }
+  const startKhatmah = () => {
+    if (!khatmah.started) {
+      setSurahIndex(0)
+      setPage(0)
+      setKhatmah((previous) => ({
+        ...previous,
+        started: true,
+        bookmark: { surahIndex: 0, page: 0 },
+      }))
+    } else {
+      setSurahIndex(khatmah.bookmark.surahIndex)
+      setPage(khatmah.bookmark.page)
+    }
+    setKhatmahSavedMessage('')
+  }
+  const saveKhatmahPosition = () => {
+    const bookmark = { surahIndex, page }
+    setKhatmah((previous) => ({ ...previous, started: true, bookmark }))
+    setKhatmahSavedMessage(`تم حفظ موضع القراءة: سورة ${currentSurah.a}، الصفحة ${ar(page + 1)}.`)
   }
   const coachPlan = useMemo(() => {
     const steps = []
@@ -1038,6 +1120,98 @@ function App() {
     </div>
   )
 
+  const renderKhatmahMode = () => (
+    <section className="page khatmah-page">
+      <div className="khatmah-heading">
+        <div className="dashboard-title">الختمة والورد</div>
+        <h2>ختمة القرآن</h2>
+      </div>
+
+      <div className="khatmah-stats">
+        <div className="khatmah-stat">
+          <span>الصفحات المقروءة</span>
+          <strong>{ar(khatmah.completedPages)} / {ar(TOTAL_MUSHAF_PAGES)}</strong>
+        </div>
+        <div className="khatmah-stat">
+          <span>الصفحات المتبقية</span>
+          <strong>{ar(khatmahRemainingPages)}</strong>
+        </div>
+        <div className="khatmah-stat">
+          <span>الأيام المتوقعة</span>
+          <strong>{ar(khatmahDaysRemaining)} يوم</strong>
+        </div>
+      </div>
+
+      <div className="khatmah-progress-copy">
+        <span>تقدّم الختمة</span>
+        <strong>{ar(khatmahProgress)}٪</strong>
+      </div>
+      <div className="goal-meter khatmah-meter" role="progressbar" aria-label="تقدّم الختمة" aria-valuenow={khatmahProgress} aria-valuemin="0" aria-valuemax="100">
+        <span style={{ width: `${khatmahProgress}%` }} />
+      </div>
+
+      <div className="khatmah-wird">
+        <div className="khatmah-progress-copy">
+          <span>الورد اليومي</span>
+          <strong>{ar(khatmahTodayPages)} / {ar(khatmah.dailyWird)} صفحة</strong>
+        </div>
+        <div className="goal-meter" role="progressbar" aria-label="إنجاز الورد اليومي" aria-valuenow={Math.min(100, Math.round((khatmahTodayPages / khatmah.dailyWird) * 100))} aria-valuemin="0" aria-valuemax="100">
+          <span style={{ width: `${Math.min(100, Math.round((khatmahTodayPages / khatmah.dailyWird) * 100))}%` }} />
+        </div>
+      </div>
+
+      <div className="khatmah-controls">
+        <label className="goal-label">
+          صفحات الورد يوميًا
+          <input
+            type="number"
+            min="1"
+            max={TOTAL_MUSHAF_PAGES}
+            value={khatmah.dailyWird}
+            onChange={(event) => {
+              const value = Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(event.target.value) || 1)))
+              setKhatmah((previous) => ({ ...previous, dailyWird: value }))
+            }}
+          />
+        </label>
+        <label className="goal-label">
+          صفحات قرأتها الآن
+          <input
+            type="number"
+            min="1"
+            max={TOTAL_MUSHAF_PAGES}
+            value={pagesToLog}
+            onChange={(event) => setPagesToLog(Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(event.target.value) || 1))))}
+          />
+        </label>
+        <button type="button" className="primary khatmah-submit" onClick={recordKhatmahPages} disabled={khatmahRemainingPages === 0}>
+          {khatmahRemainingPages === 0 ? 'أتممت الختمة' : 'حفظ الورد'}
+        </button>
+      </div>
+      {!khatmah.started ? (
+        <button type="button" className="primary khatmah-start" onClick={startKhatmah}>ابدأ الختمة</button>
+      ) : (
+        <div className="khatmah-reader">
+          <div className="khatmah-reader-head">
+            <div>
+              <span>موضع القراءة</span>
+              <strong>سورة {currentSurah.a} · الصفحة {ar(page + 1)} من {ar(pageTotal)}</strong>
+            </div>
+            <button type="button" className="primary" onClick={saveKhatmahPosition}>حفظ موضع القراءة</button>
+          </div>
+          {khatmahSavedMessage && <div className="khatmah-saved" role="status">{khatmahSavedMessage}</div>}
+          <div className="khatmah-quran-page">{renderReadMode()}</div>
+          <div className="nav khatmah-reader-nav">
+            <button type="button" onClick={handlePreviousPage}>السابق</button>
+            <span>الصفحة {ar(page + 1)} من {ar(pageTotal)}</span>
+            <button type="button" onClick={handleNextPage}>التالي</button>
+          </div>
+        </div>
+      )}
+      <div className="khatmah-saved" role="status">يُحفظ تقدّم الختمة والورد تلقائيًا على هذا الجهاز.</div>
+    </section>
+  )
+
   const renderReciteMode = () => {
     const pageText = currentSurah.a
     const firstVerse = rec.f[0]?.v ?? verseStart
@@ -1126,10 +1300,15 @@ function App() {
           <button type="button" className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}>
             مراجعة
           </button>
+          <button type="button" className={mode === 'khatmah' ? 'active' : ''} onClick={openKhatmah}>
+            الختمة
+          </button>
         </div>
       </div>
 
-      {mode !== 'review' && (
+      {mode === 'khatmah' && renderKhatmahMode()}
+
+      {mode !== 'review' && mode !== 'khatmah' && (
         <div className="dashboard">
           <div className="dashboard-head">
             <div className="dashboard-title">التقدّم</div>
@@ -1314,7 +1493,7 @@ function App() {
         </div>
       )}
 
-      <div className="bar" hidden={mode === 'recite'}>
+      <div className="bar" hidden={mode !== 'read'}>
         <div className="seg" role="group" aria-label="إخفاء الكلمات">
           {LV.map(([label, ratio], index) => (
             <button
@@ -1341,7 +1520,7 @@ function App() {
             }
           }}
         >
-          {listening ? 'Stop' : 'Start reciting'}
+          {listening ? 'إيقاف' : 'ابدأ التلاوة'}
         </button>
         <button type="button" onClick={handleHint}>تلميح</button>
         <button type="button" onMouseDown={handlePeek} onTouchStart={handlePeek}>اضغط مطولًا للإظهار</button>
@@ -1367,22 +1546,22 @@ function App() {
         <span className={listening ? 'live' : ''}>{rec.msg || (listening ? 'جارٍ الاستماع… ابدأ التلاوة من الآية الأولى' : `التلميحات المستخدمة: ${ar(rec.mist)}`)}</span>
       </div>
 
-      <div className="info">
+      <div className="info" hidden={mode === 'khatmah'}>
         <span>{pageMessages}</span>
         <span>{currentSurah.a}</span>
       </div>
 
-      <div className="pb">
+      <div className="pb" hidden={mode === 'khatmah'}>
         <i style={{ width: `${Math.round((currentCompleted.length / currentSurah.v.length) * 100)}%` }} />
       </div>
 
-      <div className={`page ${mode === 'recite' ? 'page-recite' : ''}`}>
+      <div className={`page ${mode === 'recite' ? 'page-recite' : ''}`} hidden={mode === 'khatmah'}>
         {mode === 'read' && renderReadMode()}
         {mode === 'recite' && renderReciteMode()}
         {mode === 'review' && renderReviewMode()}
       </div>
 
-      <div className="nav">
+      <div className="nav" hidden={mode === 'khatmah'}>
         <button type="button" onClick={handlePreviousPage}>السابق</button>
         <span>
           الصفحة {ar(page + 1)} من {ar(pageTotal)}
@@ -1390,7 +1569,7 @@ function App() {
         <button type="button" onClick={handleNextPage}>التالي</button>
       </div>
 
-      <p className="note">
+      <p className="note" hidden={mode === 'khatmah'}>
         اضغط رقم الآية لتحديدها كمحفوظة، واضغط الكلمة المخفية لإظهارها. يقتصر التعرّف على الكلمات ولا يقيّم أحكام التجويد. راجع مصحفًا مطبوعًا واستمع إلى معلّم متقن للتجويد.
       </p>
     </main>
