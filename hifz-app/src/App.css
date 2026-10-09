@@ -719,6 +719,7 @@ button.active {
   border-radius: 6px;
   padding: 26px 20px 22px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+  touch-action: pan-y;
 }
 
 .sh {
@@ -887,12 +888,71 @@ button.active {
   margin: 0 4px;
 }
 
-.khatmah-page {
+.app-shell-khatmah {
+  width: 100%;
+  max-width: 1600px;
+}
+
+.khatmah-layout {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.55fr) minmax(300px, 0.9fr) minmax(420px, 1.55fr);
+  align-items: stretch;
+  gap: 12px;
+  direction: ltr;
+  min-height: calc(100dvh - 150px);
+}
+
+.khatmah-brand-panel,
+.khatmah-progress-panel,
+.khatmah-reader-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   direction: rtl;
 }
 
-.khatmah-heading {
+.khatmah-brand-panel {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  min-height: 420px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: #12231d;
+  color: #fff;
   text-align: center;
+}
+
+.khatmah-brand-panel img {
+  border-radius: 12px;
+}
+
+.khatmah-brand-name {
+  margin-top: 14px;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.khatmah-brand-panel p {
+  margin: 8px 0 0;
+  color: #c4d4cc;
+  font-size: 12px;
+}
+
+.khatmah-progress-panel {
+  padding: 16px;
+  background: var(--ui);
+}
+
+.khatmah-reader-panel {
+  padding: 18px;
+  background: var(--page);
+}
+
+.khatmah-heading {
   margin-bottom: 18px;
 }
 
@@ -993,9 +1053,7 @@ button.active {
 }
 
 .khatmah-reader {
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  min-width: 0;
 }
 
 .khatmah-reader-head {
@@ -1025,10 +1083,12 @@ button.active {
 }
 
 .khatmah-quran-page {
-  margin-top: 14px;
-  padding: 8px 4px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  margin-top: 18px;
+  padding: 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--page);
+  touch-action: pan-y;
 }
 
 .khatmah-quran-page .sh {
@@ -1044,6 +1104,27 @@ button.active {
   margin-top: 10px;
 }
 
+.khatmah-reader-empty {
+  display: grid;
+  min-height: 360px;
+  align-content: center;
+  justify-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.khatmah-reader-empty h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.khatmah-reader-empty p {
+  max-width: 32ch;
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
 .khatmah-saved {
   margin-top: 12px;
   color: var(--mute);
@@ -1051,9 +1132,72 @@ button.active {
   text-align: center;
 }
 
+@media (max-width: 1000px) {
+  .khatmah-layout {
+    grid-template-columns: minmax(150px, 0.6fr) minmax(0, 1.4fr);
+  }
+
+  .khatmah-brand-panel {
+    grid-row: span 2;
+    min-height: 0;
+  }
+
+  .khatmah-reader-panel {
+    grid-column: 2;
+  }
+}
+
 @media (max-width: 420px) {
   .khatmah-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell-khatmah {
+    padding-top: 10px;
+  }
+
+  .khatmah-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .khatmah-brand-panel {
+    position: static;
+    grid-row: auto;
+    min-height: 0;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    text-align: start;
+  }
+
+  .khatmah-brand-panel img {
+    width: 36px;
+    height: 36px;
+  }
+
+  .khatmah-brand-name {
+    margin: 0;
+    font-size: 19px;
+  }
+
+  .khatmah-brand-panel p {
+    margin: 0;
+    margin-inline-start: auto;
+  }
+
+  .khatmah-progress-panel,
+  .khatmah-reader-panel {
+    padding: 12px;
+  }
+
+  .khatmah-reader-panel {
+    grid-column: auto;
+  }
+
+  .khatmah-reader-empty {
+    min-height: 240px;
   }
 
   .khatmah-stat:last-child {
@@ -1063,5 +1207,119 @@ button.active {
   .khatmah-reader-head {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-shell {
+    width: 100%;
+    max-width: none;
+    min-height: 100dvh;
+    padding: max(10px, env(safe-area-inset-top)) 10px calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .app-shell > .bar:first-child select {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  button,
+  select {
+    min-height: 44px;
+  }
+
+  .seg button {
+    min-height: 44px;
+    font-size: 12px;
+  }
+
+  .dashboard {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .dashboard.collapsed > :not(.dashboard-head) {
+    display: none;
+  }
+
+  .dashboard.collapsed .dashboard-head {
+    margin-bottom: 0;
+  }
+
+  .dashboard-toggle {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .dashboard-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .goal-label {
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .dashboard-card {
+    min-height: 92px;
+    padding: 11px;
+  }
+
+  .dashboard-label {
+    font-size: 12px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .dashboard-value {
+    font-size: 21px;
+  }
+
+  .dashboard-sub {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .focus-box {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .focus-box .goal-meter {
+    width: 100%;
+  }
+
+  .pulse-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pulse-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .pulse-card span {
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .review-actions {
+    flex-direction: column;
+  }
+
+  .page {
+    padding: 22px 14px 18px;
+  }
+
+  .nav button {
+    min-width: 82px;
   }
 }

@@ -4,7 +4,7 @@ import { SENSITIVITY_LEVELS, classifySpeech, normalizeArabic, wordMatches } from
 import { getDueReviews, getMistakes, getReviewHistory, getReviewSummary, markReviewComplete, saveMistake } from './lib/db'
 import './App.css'
 
-const ar = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d])
+const ar = (n) => String(n)
 const surahName = (index) => Q[index]?.a || `السورة ${ar(index + 1)}`
 const TOTAL_MUSHAF_PAGES = 604
 
@@ -107,6 +107,7 @@ function App() {
   const [khatmah, setKhatmah] = useState(loadKhatmahState)
   const [surahIndex, setSurahIndex] = useState(() => khatmah.bookmark.surahIndex)
   const [page, setPage] = useState(() => khatmah.bookmark.page)
+  const [dashboardExpanded, setDashboardExpanded] = useState(() => typeof window === 'undefined' || !window.matchMedia?.('(max-width: 600px)').matches)
   const [khatmahSavedMessage, setKhatmahSavedMessage] = useState('')
   const [mode, setMode] = useState('read')
   const [hiddenLevel, setHiddenLevel] = useState(0)
@@ -132,6 +133,7 @@ function App() {
   const [reviewHistory, setReviewHistory] = useState([])
   const recognitionRef = useRef(null)
   const audioRef = useRef(null)
+  const pageSwipeStartRef = useRef(null)
   const todayKey = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
@@ -957,6 +959,29 @@ function App() {
     setListening(false)
   }
 
+  const handlePagePointerDown = (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    if (event.target.closest('button, input, select, [role="button"]')) return
+    pageSwipeStartRef.current = { x: event.clientX, y: event.clientY }
+  }
+
+  const handlePagePointerUp = (event) => {
+    const start = pageSwipeStartRef.current
+    pageSwipeStartRef.current = null
+    if (!start) return
+
+    const deltaX = event.clientX - start.x
+    const deltaY = event.clientY - start.y
+    if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return
+
+    if (deltaX < 0) handleNextPage()
+    else handlePreviousPage()
+  }
+
+  const resetPagePointer = () => {
+    pageSwipeStartRef.current = null
+  }
+
   const renderReadMode = () => {
     return (
       <>
@@ -1121,95 +1146,118 @@ function App() {
   )
 
   const renderKhatmahMode = () => (
-    <section className="page khatmah-page">
-      <div className="khatmah-heading">
-        <div className="dashboard-title">الختمة والورد</div>
-        <h2>ختمة القرآن</h2>
-      </div>
+    <div className="khatmah-layout">
+      <aside className="khatmah-brand-panel">
+        <img src="/hifz-logo.svg" alt="" width="48" height="48" />
+        <span className="khatmah-brand-name">ختمة</span>
+        <p>رحلتك مع القرآن</p>
+      </aside>
 
-      <div className="khatmah-stats">
-        <div className="khatmah-stat">
-          <span>الصفحات المقروءة</span>
-          <strong>{ar(khatmah.completedPages)} / {ar(TOTAL_MUSHAF_PAGES)}</strong>
+      <section className="khatmah-progress-panel" aria-label="تقدّم الختمة والورد">
+        <div className="khatmah-heading">
+          <div className="dashboard-title">الختمة والورد</div>
+          <h2>ختمة القرآن</h2>
         </div>
-        <div className="khatmah-stat">
-          <span>الصفحات المتبقية</span>
-          <strong>{ar(khatmahRemainingPages)}</strong>
-        </div>
-        <div className="khatmah-stat">
-          <span>الأيام المتوقعة</span>
-          <strong>{ar(khatmahDaysRemaining)} يوم</strong>
-        </div>
-      </div>
 
-      <div className="khatmah-progress-copy">
-        <span>تقدّم الختمة</span>
-        <strong>{ar(khatmahProgress)}٪</strong>
-      </div>
-      <div className="goal-meter khatmah-meter" role="progressbar" aria-label="تقدّم الختمة" aria-valuenow={khatmahProgress} aria-valuemin="0" aria-valuemax="100">
-        <span style={{ width: `${khatmahProgress}%` }} />
-      </div>
+        <div className="khatmah-stats">
+          <div className="khatmah-stat">
+            <span>الصفحات المقروءة</span>
+            <strong>{ar(khatmah.completedPages)} / {ar(TOTAL_MUSHAF_PAGES)}</strong>
+          </div>
+          <div className="khatmah-stat">
+            <span>الصفحات المتبقية</span>
+            <strong>{ar(khatmahRemainingPages)}</strong>
+          </div>
+          <div className="khatmah-stat">
+            <span>الأيام المتوقعة</span>
+            <strong>{ar(khatmahDaysRemaining)} يوم</strong>
+          </div>
+        </div>
 
-      <div className="khatmah-wird">
         <div className="khatmah-progress-copy">
-          <span>الورد اليومي</span>
-          <strong>{ar(khatmahTodayPages)} / {ar(khatmah.dailyWird)} صفحة</strong>
+          <span>تقدّم الختمة</span>
+          <strong>{ar(khatmahProgress)}٪</strong>
         </div>
-        <div className="goal-meter" role="progressbar" aria-label="إنجاز الورد اليومي" aria-valuenow={Math.min(100, Math.round((khatmahTodayPages / khatmah.dailyWird) * 100))} aria-valuemin="0" aria-valuemax="100">
-          <span style={{ width: `${Math.min(100, Math.round((khatmahTodayPages / khatmah.dailyWird) * 100))}%` }} />
+        <div className="goal-meter khatmah-meter" role="progressbar" aria-label="تقدّم الختمة" aria-valuenow={khatmahProgress} aria-valuemin="0" aria-valuemax="100">
+          <span style={{ width: `${khatmahProgress}%` }} />
         </div>
-      </div>
 
-      <div className="khatmah-controls">
-        <label className="goal-label">
-          صفحات الورد يوميًا
-          <input
-            type="number"
-            min="1"
-            max={TOTAL_MUSHAF_PAGES}
-            value={khatmah.dailyWird}
-            onChange={(event) => {
-              const value = Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(event.target.value) || 1)))
-              setKhatmah((previous) => ({ ...previous, dailyWird: value }))
-            }}
-          />
-        </label>
-        <label className="goal-label">
-          صفحات قرأتها الآن
-          <input
-            type="number"
-            min="1"
-            max={TOTAL_MUSHAF_PAGES}
-            value={pagesToLog}
-            onChange={(event) => setPagesToLog(Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(event.target.value) || 1))))}
-          />
-        </label>
-        <button type="button" className="primary khatmah-submit" onClick={recordKhatmahPages} disabled={khatmahRemainingPages === 0}>
-          {khatmahRemainingPages === 0 ? 'أتممت الختمة' : 'حفظ الورد'}
-        </button>
-      </div>
-      {!khatmah.started ? (
-        <button type="button" className="primary khatmah-start" onClick={startKhatmah}>ابدأ الختمة</button>
-      ) : (
-        <div className="khatmah-reader">
-          <div className="khatmah-reader-head">
-            <div>
-              <span>موضع القراءة</span>
-              <strong>سورة {currentSurah.a} · الصفحة {ar(page + 1)} من {ar(pageTotal)}</strong>
-            </div>
-            <button type="button" className="primary" onClick={saveKhatmahPosition}>حفظ موضع القراءة</button>
+        <div className="khatmah-wird">
+          <div className="khatmah-progress-copy">
+            <span>الورد اليومي</span>
+            <strong>{ar(khatmahTodayPages)} / {ar(khatmah.dailyWird)} صفحة</strong>
           </div>
-          {khatmahSavedMessage && <div className="khatmah-saved" role="status">{khatmahSavedMessage}</div>}
-          <div className="khatmah-quran-page">{renderReadMode()}</div>
-          <div className="nav khatmah-reader-nav">
-            <button type="button" onClick={handlePreviousPage}>السابق</button>
-            <span>الصفحة {ar(page + 1)} من {ar(pageTotal)}</span>
-            <button type="button" onClick={handleNextPage}>التالي</button>
+          <div className="goal-meter" role="progressbar" aria-label="إنجاز الورد اليومي" aria-valuenow={Math.min(100, Math.round((khatmahTodayPages / khatmah.dailyWird) * 100))} aria-valuemin="0" aria-valuemax="100">
+            <span style={{ width: `${Math.min(100, Math.round((khatmahTodayPages / khatmah.dailyWird) * 100))}%` }} />
           </div>
         </div>
-      )}
-      <div className="khatmah-saved" role="status">يُحفظ تقدّم الختمة والورد تلقائيًا على هذا الجهاز.</div>
-    </section>
+
+        <div className="khatmah-controls">
+          <label className="goal-label">
+            صفحات الورد يوميًا
+            <input
+              type="number"
+              min="1"
+              max={TOTAL_MUSHAF_PAGES}
+              value={khatmah.dailyWird}
+              onChange={(event) => {
+                const value = Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(event.target.value) || 1)))
+                setKhatmah((previous) => ({ ...previous, dailyWird: value }))
+              }}
+            />
+          </label>
+          <label className="goal-label">
+            صفحات قرأتها الآن
+            <input
+              type="number"
+              min="1"
+              max={TOTAL_MUSHAF_PAGES}
+              value={pagesToLog}
+              onChange={(event) => setPagesToLog(Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(event.target.value) || 1))))}
+            />
+          </label>
+          <button type="button" className="primary khatmah-submit" onClick={recordKhatmahPages} disabled={khatmahRemainingPages === 0}>
+            {khatmahRemainingPages === 0 ? 'أتممت الختمة' : 'حفظ الورد'}
+          </button>
+        </div>
+
+        <div className="khatmah-saved" role="status">يُحفظ تقدّم الختمة والورد تلقائيًا على هذا الجهاز.</div>
+      </section>
+
+      <section className="khatmah-reader-panel" aria-label="قراءة القرآن">
+        {!khatmah.started ? (
+          <div className="khatmah-reader-empty">
+            <h2>ابدأ ختمتك</h2>
+            <p>ستظهر آيات القرآن هنا، ويمكنك حفظ موضعك للعودة إليه لاحقًا.</p>
+            <button type="button" className="primary khatmah-start" onClick={startKhatmah}>ابدأ الختمة</button>
+          </div>
+        ) : (
+          <div className="khatmah-reader">
+            <div className="khatmah-reader-head">
+              <div>
+                <span>موضع القراءة</span>
+                <strong>سورة {currentSurah.a} · الصفحة {ar(page + 1)} من {ar(pageTotal)}</strong>
+              </div>
+              <button type="button" className="primary" onClick={saveKhatmahPosition}>حفظ موضع القراءة</button>
+            </div>
+            {khatmahSavedMessage && <div className="khatmah-saved" role="status">{khatmahSavedMessage}</div>}
+            <div
+              className="khatmah-quran-page"
+              onPointerDown={handlePagePointerDown}
+              onPointerUp={handlePagePointerUp}
+              onPointerCancel={resetPagePointer}
+            >
+              {renderReadMode()}
+            </div>
+            <div className="nav khatmah-reader-nav">
+              <button type="button" onClick={handlePreviousPage}>السابق</button>
+              <span>الصفحة {ar(page + 1)} من {ar(pageTotal)}</span>
+              <button type="button" onClick={handleNextPage}>التالي</button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
   )
 
   const renderReciteMode = () => {
@@ -1271,7 +1319,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${mode === 'khatmah' ? 'app-shell-khatmah' : ''}`}>
       <div className="bar">
         <select value={surahIndex} onChange={handleSurahChange} aria-label="السورة">
           {Q.map((surah, index) => (
@@ -1309,7 +1357,7 @@ function App() {
       {mode === 'khatmah' && renderKhatmahMode()}
 
       {mode !== 'review' && mode !== 'khatmah' && (
-        <div className="dashboard">
+        <div className={`dashboard ${dashboardExpanded ? 'expanded' : 'collapsed'}`}>
           <div className="dashboard-head">
             <div className="dashboard-title">التقدّم</div>
             <label className="goal-label">
@@ -1322,6 +1370,14 @@ function App() {
                 onChange={(event) => setDailyGoal(Math.max(5, Number(event.target.value) || 20))}
               />
             </label>
+            <button
+              type="button"
+              className="dashboard-toggle"
+              aria-expanded={dashboardExpanded}
+              onClick={() => setDashboardExpanded((previous) => !previous)}
+            >
+              {dashboardExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
+            </button>
           </div>
           <div className="dashboard-grid">
             <div className="dashboard-card">
@@ -1555,7 +1611,13 @@ function App() {
         <i style={{ width: `${Math.round((currentCompleted.length / currentSurah.v.length) * 100)}%` }} />
       </div>
 
-      <div className={`page ${mode === 'recite' ? 'page-recite' : ''}`} hidden={mode === 'khatmah'}>
+      <div
+        className={`page ${mode === 'recite' ? 'page-recite' : ''}`}
+        hidden={mode === 'khatmah'}
+        onPointerDown={mode === 'read' ? handlePagePointerDown : undefined}
+        onPointerUp={mode === 'read' ? handlePagePointerUp : undefined}
+        onPointerCancel={mode === 'read' ? resetPagePointer : undefined}
+      >
         {mode === 'read' && renderReadMode()}
         {mode === 'recite' && renderReciteMode()}
         {mode === 'review' && renderReviewMode()}
