@@ -63,7 +63,7 @@ const loadStudyState = () => {
 }
 
 const loadKhatmahState = () => {
-  const fallback = { started: false, bookmark: { surahIndex: 0, page: 0 }, completedPages: 0, dailyWird: 5, log: {} }
+  const fallback = { started: false, bookmark: { surahIndex: 0, page: 0, mushafPage: 1 }, completedPages: 0, dailyWird: 5, log: {} }
   if (typeof window === 'undefined') return fallback
   try {
     const raw = window.localStorage.getItem('hifzKhatmah')
@@ -72,11 +72,13 @@ const loadKhatmahState = () => {
     if (!saved || typeof saved !== 'object') return fallback
     const bookmarkSurahIndex = Math.min(Q.length - 1, Math.max(0, Math.floor(Number(saved.bookmark?.surahIndex) || 0)))
     const bookmarkPageCount = Math.ceil(Q[bookmarkSurahIndex].v.length / PER)
+    const bookmarkMushafPage = Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(saved.bookmark?.mushafPage) || 1)))
     return {
       started: saved.started === true || Number(saved.completedPages) > 0,
       bookmark: {
         surahIndex: bookmarkSurahIndex,
         page: Math.min(bookmarkPageCount - 1, Math.max(0, Math.floor(Number(saved.bookmark?.page) || 0))),
+        mushafPage: bookmarkMushafPage,
       },
       completedPages: Math.min(TOTAL_MUSHAF_PAGES, Math.max(0, Math.floor(Number(saved.completedPages) || 0))),
       dailyWird: Math.min(TOTAL_MUSHAF_PAGES, Math.max(1, Math.floor(Number(saved.dailyWird) || 5))),
@@ -107,6 +109,7 @@ function App() {
   const [khatmah, setKhatmah] = useState(loadKhatmahState)
   const [surahIndex, setSurahIndex] = useState(() => khatmah.bookmark.surahIndex)
   const [page, setPage] = useState(() => khatmah.bookmark.page)
+  const [mushafPage, setMushafPage] = useState(() => khatmah.bookmark.mushafPage)
   const [dashboardExpanded, setDashboardExpanded] = useState(() => typeof window === 'undefined' || !window.matchMedia?.('(max-width: 600px)').matches)
   const [khatmahSavedMessage, setKhatmahSavedMessage] = useState('')
   const [mode, setMode] = useState('read')
@@ -450,6 +453,7 @@ function App() {
   const openKhatmah = () => {
     setSurahIndex(khatmah.bookmark.surahIndex)
     setPage(khatmah.bookmark.page)
+    setMushafPage(khatmah.bookmark.mushafPage)
     setKhatmahSavedMessage('')
     setMode('khatmah')
   }
@@ -457,21 +461,26 @@ function App() {
     if (!khatmah.started) {
       setSurahIndex(0)
       setPage(0)
+      setMushafPage(1)
       setKhatmah((previous) => ({
         ...previous,
         started: true,
-        bookmark: { surahIndex: 0, page: 0 },
+        bookmark: { ...previous.bookmark, surahIndex: 0, page: 0, mushafPage: 1 },
       }))
     } else {
       setSurahIndex(khatmah.bookmark.surahIndex)
       setPage(khatmah.bookmark.page)
+      setMushafPage(khatmah.bookmark.mushafPage)
     }
     setKhatmahSavedMessage('')
   }
   const saveKhatmahPosition = () => {
-    const bookmark = { surahIndex, page }
-    setKhatmah((previous) => ({ ...previous, started: true, bookmark }))
-    setKhatmahSavedMessage(`تم حفظ موضع القراءة: سورة ${currentSurah.a}، الصفحة ${ar(page + 1)}.`)
+    setKhatmah((previous) => ({
+      ...previous,
+      started: true,
+      bookmark: { ...previous.bookmark, mushafPage },
+    }))
+    setKhatmahSavedMessage(`تم حفظ الصفحة ${ar(mushafPage)} للمتابعة لاحقًا.`)
   }
   const coachPlan = useMemo(() => {
     const steps = []
@@ -959,13 +968,21 @@ function App() {
     setListening(false)
   }
 
+  const handleNextMushafPage = () => {
+    setMushafPage((previous) => Math.min(TOTAL_MUSHAF_PAGES, previous + 1))
+  }
+
+  const handlePreviousMushafPage = () => {
+    setMushafPage((previous) => Math.max(1, previous - 1))
+  }
+
   const handlePagePointerDown = (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
     if (event.target.closest('button, input, select, [role="button"]')) return
     pageSwipeStartRef.current = { x: event.clientX, y: event.clientY }
   }
 
-  const handlePagePointerUp = (event) => {
+  const handlePagePointerUp = (event, onNextPage = handleNextPage, onPreviousPage = handlePreviousPage) => {
     const start = pageSwipeStartRef.current
     pageSwipeStartRef.current = null
     if (!start) return
@@ -974,8 +991,8 @@ function App() {
     const deltaY = event.clientY - start.y
     if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return
 
-    if (deltaX < 0) handleNextPage()
-    else handlePreviousPage()
+    if (deltaX < 0) onNextPage()
+    else onPreviousPage()
   }
 
   const resetPagePointer = () => {
@@ -1235,8 +1252,8 @@ function App() {
           <div className="khatmah-reader">
             <div className="khatmah-reader-head">
               <div>
-                <span>موضع القراءة</span>
-                <strong>سورة {currentSurah.a} · الصفحة {ar(page + 1)} من {ar(pageTotal)}</strong>
+                <span>صفحة المصحف</span>
+                <strong>{ar(mushafPage)} / {ar(TOTAL_MUSHAF_PAGES)}</strong>
               </div>
               <button type="button" className="primary" onClick={saveKhatmahPosition}>حفظ موضع القراءة</button>
             </div>
@@ -1244,16 +1261,25 @@ function App() {
             <div
               className="khatmah-quran-page"
               onPointerDown={handlePagePointerDown}
-              onPointerUp={handlePagePointerUp}
+              onPointerUp={(event) => handlePagePointerUp(event, handleNextMushafPage, handlePreviousMushafPage)}
               onPointerCancel={resetPagePointer}
             >
-              {renderReadMode()}
+              <img
+                className="khatmah-scan"
+                src={`https://quran.ksu.edu.sa/ayat/safahat1/${mushafPage}.png`}
+                alt={`صفحة المصحف ${ar(mushafPage)}`}
+                width="456"
+                height="672"
+                decoding="async"
+                draggable="false"
+              />
             </div>
             <div className="nav khatmah-reader-nav">
-              <button type="button" onClick={handlePreviousPage}>السابق</button>
-              <span>الصفحة {ar(page + 1)} من {ar(pageTotal)}</span>
-              <button type="button" onClick={handleNextPage}>التالي</button>
+              <button type="button" onClick={handlePreviousMushafPage} disabled={mushafPage <= 1}>السابق</button>
+              <span>الصفحة {ar(mushafPage)} من {ar(TOTAL_MUSHAF_PAGES)}</span>
+              <button type="button" onClick={handleNextMushafPage} disabled={mushafPage >= TOTAL_MUSHAF_PAGES}>التالي</button>
             </div>
+            <a className="khatmah-image-credit" href="https://quran.ksu.edu.sa/index.php?pg=1" target="_blank" rel="noreferrer">صور الصفحات من موقع آيات بجامعة الملك سعود</a>
           </div>
         )}
       </section>

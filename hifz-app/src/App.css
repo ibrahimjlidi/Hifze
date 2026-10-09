@@ -1091,6 +1091,16 @@ button.active {
   touch-action: pan-y;
 }
 
+.khatmah-scan {
+  display: block;
+  width: min(100%, 456px);
+  height: auto;
+  max-height: calc(100dvh - 220px);
+  margin: 0 auto;
+  object-fit: contain;
+  user-select: none;
+}
+
 .khatmah-quran-page .sh {
   font-size: 21px;
 }
@@ -1102,6 +1112,20 @@ button.active {
 
 .khatmah-reader-nav {
   margin-top: 10px;
+}
+
+.khatmah-image-credit {
+  display: block;
+  margin-top: 12px;
+  color: var(--mute);
+  font-size: 11px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.khatmah-image-credit:hover {
+  color: var(--frame);
+  text-decoration: underline;
 }
 
 .khatmah-reader-empty {
@@ -1194,6 +1218,11 @@ button.active {
 
   .khatmah-reader-panel {
     grid-column: auto;
+  }
+
+  .khatmah-scan {
+    width: 100%;
+    max-height: none;
   }
 
   .khatmah-reader-empty {
